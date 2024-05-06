@@ -18,7 +18,7 @@ import (
 
 // NodeValidator is the struct used to validate the nodes
 type NodeValidator struct {
-	Decoder *admission.Decoder
+	Decoder admission.Decoder
 	Client  client.Client
 }
 
