@@ -39,6 +39,16 @@ The logs of the webhook provide details about the operations performed on the no
 $ make deploy IMG=ghcr.io/dana-team/node-operation-validator:<release>
 ```
 
+### Install with Helm
+
+Helm chart docs are available on `charts/node-operation-validator` directory.
+
+Make sure `cert-manager` is [installed](https://cert-manager.io/docs/installation/helm/) as a prerequisite.
+
+```
+$ helm upgrade --install node-operation-validator --namespace node-operation-webhook-system --create-namespace oci://ghcr.io/dana-team/helm-charts/node-operation-validator --version <release>
+```
+
 #### Build your own image
 
 ```bash
