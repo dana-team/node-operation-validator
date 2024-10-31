@@ -144,7 +144,7 @@ securityContext: {}
 # -- Name of the ConfigMap used for configuration.
 config:
   name: operator-config
-  forbidden:
+  forbiddenUsers:
     - user1
     - user2
 # -- Service configuration for the operator.
