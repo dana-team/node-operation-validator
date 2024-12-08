@@ -170,3 +170,9 @@ volumes:
     secret:
       secretName: webhook-server-cert
       defaultMode: 420
+
+# -- Configuration for the configmap that defines a set of reasons
+reasons:
+  allowedReasons:
+    - Configuration
+    - Testing
