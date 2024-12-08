@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: reasons-config
+  namespace: node-operation-webhook-system
+data:
+  reasons: |
+    - Testing
+    - Unauthorized access
+    - Invalid configuration
+    - Dependency error

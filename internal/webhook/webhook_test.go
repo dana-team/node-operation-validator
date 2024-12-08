@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/gomega"
@@ -43,27 +44,48 @@ func TestNodeWebhook(t *testing.T) {
 		reason    string
 		allowed   bool
 	}{
-		{name: "CreateWithReason", operation: admissionv1.Create, user: regularUserExample, reason: "testing", allowed: false},
-		{name: "CreateWithoutReason", operation: admissionv1.Create, user: systemAdminUser, reason: "", allowed: true},
-		{name: "DeleteAsKubeadminWithReason", operation: admissionv1.Delete, user: systemAdminUser, reason: "testing", allowed: false},
+		{name: "CreateWithReason", operation: admissionv1.Create, user: regularUserExample, reason: "Testing", allowed: false},
+		{name: "CreateWithoutReason", operation: admissionv1.Create, user: regularUserExample, reason: "", allowed: true},
+		{name: "DeleteAsKubeadminWithReason", operation: admissionv1.Delete, user: systemAdminUser, reason: "Testing", allowed: false},
 		{name: "DeleteAsUserWithoutReason", operation: admissionv1.Delete, user: regularUserExample, reason: "", allowed: false},
-		{name: "DeleteAsUserWithReason", operation: admissionv1.Delete, user: regularUserExample, reason: "testing", allowed: true},
-		{name: "CordonAsKubeadminWithReason", operation: "cordon", user: systemAdminUser, reason: "testing", allowed: false},
+		{name: "DeleteAsUserWithValidReason", operation: admissionv1.Delete, user: regularUserExample, reason: "testing", allowed: true},
+		{name: "DeleteAsUserWithoutValidReason", operation: admissionv1.Delete, user: regularUserExample, reason: "for fun", allowed: false},
+		{name: "CordonAsKubeadminWithReason", operation: "cordon", user: systemAdminUser, reason: "Testing", allowed: false},
 		{name: "CordonAsUserWithoutReason", operation: "cordon", user: regularUserExample, reason: "", allowed: false},
-		{name: "CordonAsUserWithReason", operation: "cordon", user: regularUserExample, reason: "testing", allowed: true},
+		{name: "CordonAsUserWithReason", operation: "cordon", user: regularUserExample, reason: "Testing", allowed: true},
 		{name: "CordonAsServiceAccountWithoutReason", operation: "cordon", user: serviceAccountUser + "openshift-machine-config-operator:machine-config-daemon", reason: "", allowed: true},
 		{name: "UncordonAsKubeadminWithoutReason", operation: "uncordon", user: systemAdminUser, reason: "", allowed: false},
-		{name: "UncordonAsUserWithReason", operation: "uncordon", user: regularUserExample, reason: "testing", allowed: false},
+		{name: "UncordonAsUserWithReason", operation: "uncordon", user: regularUserExample, reason: "Testing", allowed: false},
 		{name: "UncordonAsUserWithoutReason", operation: "uncordon", user: regularUserExample, reason: "", allowed: true},
 		{name: "UncordonAsServiceAccountWithReason", operation: "uncordon", user: serviceAccountUser + "openshift-machine-config-operator:machine-config-daemon", reason: "testing", allowed: true},
 	}
 	fakeClient := newFakeClient()
+
+	mockConfigMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      cmName,
+			Namespace: cmNamespace,
+		},
+		Data: map[string]string{
+			"reasons": strings.Join([]string{
+				"Testing",
+				"Unauthorized access",
+				"Invalid configuration",
+				"Dependency error",
+			}, "\n"),
+		},
+	}
+	err := fakeClient.Create(context.Background(), mockConfigMap)
+	if err != nil {
+		t.Fatalf("Failed to create mocked ConfigMap: %v", err)
+	}
+
 	ctx := context.Background()
 	g := NewWithT(t)
 	decoder := admission.NewDecoder(scheme.Scheme)
 	nv := NodeValidator{Decoder: decoder, Client: fakeClient}
 
-	err := os.Setenv(ForbiddenUsersEnv, systemAdminUser)
+	err = os.Setenv(ForbiddenUsersEnv, systemAdminUser)
 	if err != nil {
 		print(err)
 	}
