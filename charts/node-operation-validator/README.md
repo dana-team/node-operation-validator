@@ -9,22 +9,12 @@ A Helm chart for Kubernetes
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | affinity | object | `{}` | Node affinity rules for scheduling pods. Allows you to specify advanced node selection constraints. |
-| config | object | `{"forbidden":["user1","user2"],"name":"operator-config"}` | Name of the ConfigMap used for configuration. |
+| config.allowedReasons | list | `["Configuration","Testing"]` | List of valid reasons for node operations. |
+| config.forbiddenUsers | list | `["user1","user2"]` | List of users forbidden from commiting node operations. |
 | fullnameOverride | string | `""` |  |
-| image.kubeRbacProxy.pullPolicy | string | `"IfNotPresent"` | The pull policy for the image. |
-| image.kubeRbacProxy.repository | string | `"gcr.io/kubebuilder/kube-rbac-proxy"` | The repository of the kube-rbac-proxy container image. |
-| image.kubeRbacProxy.tag | string | `"v0.16.0"` | The tag of the kube-rbac-proxy container image. |
 | image.manager.pullPolicy | string | `"IfNotPresent"` | The pull policy for the image. |
 | image.manager.repository | string | `"ghcr.io/dana-team/node-operation-validator"` | The repository of the manager container image. |
 | image.manager.tag | string | `""` | The tag of the manager container image. |
-| kubeRbacProxy | object | `{"args":["--secure-listen-address=0.0.0.0:8443","--upstream=http://127.0.0.1:8080/","--logtostderr=true","--v=0"],"ports":{"https":{"containerPort":8443,"name":"https","protocol":"TCP"}},"resources":{"limits":{"cpu":"500m","memory":"128Mi"},"requests":{"cpu":"5m","memory":"64Mi"}},"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}}}` | Configuration for the kube-rbac-proxy container. |
-| kubeRbacProxy.args | list | `["--secure-listen-address=0.0.0.0:8443","--upstream=http://127.0.0.1:8080/","--logtostderr=true","--v=0"]` | Command-line arguments passed to the kube-rbac-proxy container. |
-| kubeRbacProxy.ports | object | `{"https":{"containerPort":8443,"name":"https","protocol":"TCP"}}` | Port configurations for the kube-rbac-proxy container. |
-| kubeRbacProxy.ports.https.containerPort | int | `8443` | The port for the HTTPS endpoint. |
-| kubeRbacProxy.ports.https.name | string | `"https"` | The name of the HTTPS port. |
-| kubeRbacProxy.ports.https.protocol | string | `"TCP"` | The protocol used by the HTTPS endpoint. |
-| kubeRbacProxy.resources | object | `{"limits":{"cpu":"500m","memory":"128Mi"},"requests":{"cpu":"5m","memory":"64Mi"}}` | Resource requests and limits for the kube-rbac-proxy container. |
-| kubeRbacProxy.securityContext | object | `{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}}` | Security settings for the kube-rbac-proxy container. |
 | livenessProbe | object | `{"initialDelaySeconds":15,"periodSeconds":20,"port":8081}` | Configuration for the liveness probe. |
 | livenessProbe.initialDelaySeconds | int | `15` | The initial delay before the liveness probe is initiated. |
 | livenessProbe.periodSeconds | int | `20` | The frequency (in seconds) with which the probe will be performed. |

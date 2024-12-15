@@ -1,8 +1,9 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ .Values.config.name }}
+  name: node-operation-validator-config
   labels:
     {{- include "node-operation-validator.labels" . | nindent 4 }}
 data:
-  forbiddenUsers: {{ join "," .Values.config.forbiddenUsers }}
+  forbiddenUsers: {{ join "," .Values.config.forbiddenUsers | quote }}
+  allowedReasons: {{join "," .Values.config.allowedReasons | quote}}
