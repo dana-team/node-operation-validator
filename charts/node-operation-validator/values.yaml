@@ -56,9 +56,16 @@ manager:
   args:
     - --leader-elect
     - --health-probe-bind-address=:8081
-    - --metrics-bind-address=127.0.0.1:8080
+    - --metrics-bind-address=:8443
   # -- Port configurations for the manager container.
   ports:
+    https:
+      # -- The port for the https endpoint.
+      containerPort: 8443
+      # -- The protocol used by the https endpoint.
+      protocol: TCP
+      # -- The name of the https port.
+      name: https
     health:
       # -- The port for the health check endpoint.
       containerPort: 8081
