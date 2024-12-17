@@ -68,6 +68,9 @@ spec:
             - containerPort: {{ .Values.manager.ports.webhook.containerPort }}
               name: {{ .Values.manager.ports.webhook.name }}
               protocol: {{ .Values.manager.ports.webhook.protocol }}
+            - containerPort: {{ .Values.manager.ports.https.containerPort }}
+              name: {{ .Values.manager.ports.https.name }}
+              protocol: {{ .Values.manager.ports.https.protocol }}
           volumeMounts:
           {{- range .Values.manager.volumeMounts }}
           - mountPath: {{ .mountPath }}
