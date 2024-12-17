@@ -34,8 +34,8 @@ const (
 	Delete             Operation = "delete"
 	Cordon             Operation = "cordon"
 	Uncordon           Operation = "uncordon"
-	cmName                       = "reasons-config"
-	cmNamespace                  = "node-operation-webhook-system"
+	cmName                       = "node-operation-validator-config"
+	cmNamespace                  = "node-operation-validator-system"
 )
 
 // +kubebuilder:webhook:path=/validate-v1-node,mutating=false,failurePolicy=ignore,sideEffects=None,groups=core,resources=nodes,verbs=delete;create;update,versions=v1,name=nodeoperation.dana.io,admissionReviewVersions=v1
@@ -160,11 +160,11 @@ func (n *NodeValidator) getAllowedReasons(ctx context.Context, namespace string,
 		return nil, fmt.Errorf("failed to fetch ConfigMap %s/%s: %w", namespace, cmName, err)
 	}
 
-	allowedReasons, ok := configMapReasons.Data["reasons"]
+	allowedReasons, ok := configMapReasons.Data["allowedReasons"]
 	if !ok {
-		return nil, fmt.Errorf("ConfigMap %s/%s does not contain 'reasons' key", namespace, cmName)
+		return nil, fmt.Errorf("ConfigMap %s/%s does not contain 'allowedReasons' key", namespace, cmName)
 	}
-	reasons := strings.Split(allowedReasons, "\n")
+	reasons := strings.Split(allowedReasons, ",")
 	return reasons, nil
 }
 

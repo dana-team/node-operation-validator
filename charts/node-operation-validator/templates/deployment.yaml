@@ -39,7 +39,7 @@ spec:
           {{- end }}
           envFrom:
             - configMapRef:
-                name: {{ .Values.config.name }}
+                name: node-operation-validator-config
           securityContext:
             {{- toYaml .Values.manager.securityContext | nindent 12 }}
           livenessProbe:
@@ -74,26 +74,6 @@ spec:
             name: {{ .name }}
             readOnly: {{ .readOnly }}
           {{- end }}
-        - name: kube-rbac-proxy
-          image: {{ .Values.image.kubeRbacProxy.repository }}:{{ .Values.image.kubeRbacProxy.tag }}
-          imagePullPolicy: {{ .Values.image.kubeRbacProxy.pullPolicy }}
-          args:
-          {{- range .Values.kubeRbacProxy.args }}
-          - {{ . }}
-          {{- end }}
-          securityContext:
-            {{- toYaml .Values.kubeRbacProxy.securityContext | nindent 12 }}
-          ports:
-            - containerPort: {{ .Values.kubeRbacProxy.ports.https.containerPort }}
-              protocol: {{ .Values.kubeRbacProxy.ports.https.protocol }}
-              name: {{ .Values.kubeRbacProxy.ports.https.name }}
-          resources:
-            limits:
-              cpu: {{ .Values.kubeRbacProxy.resources.limits.cpu }}
-              memory: {{ .Values.kubeRbacProxy.resources.limits.memory }}
-            requests:
-              cpu: {{ .Values.kubeRbacProxy.resources.requests.cpu }}
-              memory: {{ .Values.kubeRbacProxy.resources.requests.memory }}
       serviceAccountName: {{ include "node-operation-validator.fullname" . }}-controller-manager
       volumes:
       {{- range .Values.volumes }}

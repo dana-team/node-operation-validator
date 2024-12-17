@@ -36,7 +36,6 @@ func newFakeClient() client.Client {
 }
 
 func TestNodeWebhook(t *testing.T) {
-	//webhookLog := ctrl.Log.WithName("Node webhook")
 	tests := []struct {
 		name      string
 		operation admissionv1.Operation
@@ -67,12 +66,12 @@ func TestNodeWebhook(t *testing.T) {
 			Namespace: cmNamespace,
 		},
 		Data: map[string]string{
-			"reasons": strings.Join([]string{
+			"allowedReasons": strings.Join([]string{
 				"Testing",
 				"Unauthorized access",
 				"Invalid configuration",
 				"Dependency error",
-			}, "\n"),
+			}, ","),
 		},
 	}
 	err := fakeClient.Create(context.Background(), mockConfigMap)
