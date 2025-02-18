@@ -7,10 +7,8 @@ import (
 	"os"
 	"strings"
 
-	admissionv1 "k8s.io/api/admission/v1"
-	"sigs.k8s.io/controller-runtime/pkg/log"
-
 	"github.com/go-logr/logr"
+	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -20,6 +18,7 @@ import (
 type NodeValidator struct {
 	Decoder admission.Decoder
 	Client  client.Client
+	Logger  logr.Logger
 }
 
 // Operation represents the type of operation being performed
@@ -28,6 +27,7 @@ type Operation string
 const (
 	reasonAnnotation             = "node.dana.io/reason"
 	serviceAccountUser           = "system:serviceaccount:"
+	nodeUser                     = "system:node:"
 	systemAdminUser              = "system:admin"
 	ForbiddenUsersEnv            = "forbiddenUsers"
 	Create             Operation = "create"
@@ -42,7 +42,7 @@ const (
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
 
 func (n *NodeValidator) Handle(ctx context.Context, req admission.Request) admission.Response {
-	logger := log.FromContext(ctx).WithName("Node Webhook").WithValues("node", req.Name)
+	logger := n.Logger.WithValues("node", req.Name)
 
 	node := corev1.Node{}
 	oldNode := corev1.Node{}
@@ -106,6 +106,10 @@ func userOnlyOperation(operation Operation, user string, forbiddenUsers []string
 		log.Info(fmt.Sprintf("%s node approved", operation), "User", user, "ApprovalReason", "Service account is allowed to do any operation")
 		return admission.Allowed(fmt.Sprintf("Service account %q is allowed to do everything", user))
 
+	case isNode(user):
+		log.Info(fmt.Sprintf("%s node approved", operation), "User", user, "ApprovalReason", "Node is allowed to do any operation")
+		return admission.Allowed(fmt.Sprintf("Node %q is allowed to do everything", user))
+
 	default:
 		if isReasonRequired {
 			if doesReasonExist {
@@ -140,6 +144,10 @@ func validateNoReason(doesReasonExist bool, log logr.Logger, operation Operation
 // isServiceAccount returns true if the given user is a service account.
 func isServiceAccount(user string) bool {
 	return strings.HasPrefix(user, serviceAccountUser)
+}
+
+func isNode(user string) bool {
+	return strings.HasPrefix(user, nodeUser)
 }
 
 // isForbiddenUser checks if the given user is in the list of forbidden users.
