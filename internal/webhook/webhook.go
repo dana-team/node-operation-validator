@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/go-logr/logr"
@@ -25,17 +26,19 @@ type NodeValidator struct {
 type Operation string
 
 const (
-	reasonAnnotation             = "node.dana.io/reason"
-	serviceAccountUser           = "system:serviceaccount:"
-	nodeUser                     = "system:node:"
-	systemAdminUser              = "system:admin"
-	ForbiddenUsersEnv            = "forbiddenUsers"
-	Create             Operation = "create"
-	Delete             Operation = "delete"
-	Cordon             Operation = "cordon"
-	Uncordon           Operation = "uncordon"
-	cmName                       = "node-operation-validator-config"
-	cmNamespace                  = "node-operation-validator-system"
+	reasonAnnotation                = "node.dana.io/reason"
+	serviceAccountUser              = "system:serviceaccount:"
+	nodeUser                        = "system:node:"
+	systemAdminUser                 = "system:admin"
+	ForbiddenUsersEnv               = "forbiddenUsers"
+	Create                Operation = "create"
+	Delete                Operation = "delete"
+	Cordon                Operation = "cordon"
+	Uncordon              Operation = "uncordon"
+	cmName                          = "node-operation-validator-config"
+	cmNamespace                     = "node-operation-validator-system"
+	reasonRegexPatternKey           = "reasonRegexPattern"
+	allowedReasonsKey               = "allowedReasons"
 )
 
 // +kubebuilder:webhook:path=/validate-v1-node,mutating=false,failurePolicy=ignore,sideEffects=None,groups=core,resources=nodes,verbs=delete;create;update,versions=v1,name=nodeoperation.dana.io,admissionReviewVersions=v1
@@ -51,7 +54,7 @@ func (n *NodeValidator) Handle(ctx context.Context, req admission.Request) admis
 	forbiddenUsers := strings.Split(os.Getenv(ForbiddenUsersEnv), ",")
 	forbiddenUsers = append(forbiddenUsers, systemAdminUser)
 
-	allowedReasons, err := n.getAllowedReasons(ctx, cmNamespace, logger)
+	allowedReasons, reasonRegex, err := n.getAllowedReasonsAndPattern(ctx, cmNamespace, logger)
 	if err != nil {
 		return admission.Errored(http.StatusInternalServerError, fmt.Errorf("failed to fetch allowed reasons: %w", err))
 	}
@@ -62,7 +65,7 @@ func (n *NodeValidator) Handle(ctx context.Context, req admission.Request) admis
 			return admission.Errored(http.StatusBadRequest, fmt.Errorf("failed to decode node %q", req.Name))
 		}
 		reasonMessage, doesReasonExist := node.Annotations[reasonAnnotation]
-		return userOnlyOperation(Delete, user, forbiddenUsers, reasonMessage, logger, true, doesReasonExist, allowedReasons)
+		return userOnlyOperation(Delete, user, forbiddenUsers, reasonMessage, logger, true, doesReasonExist, allowedReasons, reasonRegex)
 
 	case admissionv1.Create:
 		if err := n.Decoder.DecodeRaw(req.Object, &node); err != nil {
@@ -83,10 +86,10 @@ func (n *NodeValidator) Handle(ctx context.Context, req admission.Request) admis
 
 		switch {
 		case !oldNode.Spec.Unschedulable && node.Spec.Unschedulable:
-			return userOnlyOperation(Cordon, user, forbiddenUsers, reasonMessage, logger, true, doesReasonExist, allowedReasons)
+			return userOnlyOperation(Cordon, user, forbiddenUsers, reasonMessage, logger, true, doesReasonExist, allowedReasons, reasonRegex)
 
 		case oldNode.Spec.Unschedulable && !node.Spec.Unschedulable:
-			return userOnlyOperation(Uncordon, user, forbiddenUsers, reasonMessage, logger, false, doesReasonExist, allowedReasons)
+			return userOnlyOperation(Uncordon, user, forbiddenUsers, reasonMessage, logger, false, doesReasonExist, allowedReasons, reasonRegex)
 
 		default:
 			return admission.Allowed("Node was updated")
@@ -96,7 +99,7 @@ func (n *NodeValidator) Handle(ctx context.Context, req admission.Request) admis
 
 // userOnlyOperation checks whether a given user is allowed to perform a specific operation on a node.
 // It returns an admission response indicating whether the operation is allowed or denied.
-func userOnlyOperation(operation Operation, user string, forbiddenUsers []string, reasonMessage string, log logr.Logger, isReasonRequired bool, doesReasonExist bool, allowedReasons []string) admission.Response {
+func userOnlyOperation(operation Operation, user string, forbiddenUsers []string, reasonMessage string, log logr.Logger, isReasonRequired bool, doesReasonExist bool, allowedReasons []string, reasonPattern string) admission.Response {
 	switch {
 	case isForbiddenUser(user, forbiddenUsers):
 		log.Info(fmt.Sprintf("%s node denied", operation), "DenialReason", "forbidden user", "User", user)
@@ -113,7 +116,7 @@ func userOnlyOperation(operation Operation, user string, forbiddenUsers []string
 	default:
 		if isReasonRequired {
 			if doesReasonExist {
-				if reasonIsAllowed(allowedReasons, reasonMessage) {
+				if reasonIsAllowed(allowedReasons, reasonMessage) || reasonMatchesPattern(reasonPattern, reasonMessage) {
 					log.Info(fmt.Sprintf("%s node approved", operation), "User", user, "Reason", reasonMessage)
 					return admission.Allowed(fmt.Sprintf("%s operation has been approved", operation))
 				}
@@ -160,20 +163,30 @@ func isForbiddenUser(userToCheck string, forbiddenUsers []string) bool {
 	return false
 }
 
-// getAllowedReasons fetches the allowed reasons from the ConfigMap.
-func (n *NodeValidator) getAllowedReasons(ctx context.Context, namespace string, logger logr.Logger) ([]string, error) {
-	configMapReasons := corev1.ConfigMap{}
-	if err := n.Client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: cmName}, &configMapReasons); err != nil {
+// getAllowedReasonsAndPattern fetches the allowed reasons and reason validation regex pattern from the webhook config.
+func (n *NodeValidator) getAllowedReasonsAndPattern(ctx context.Context, namespace string, logger logr.Logger) ([]string, string, error) {
+	var regexPattern string
+	var allowedReasons string
+	webhookConfig := corev1.ConfigMap{}
+	if err := n.Client.Get(ctx, client.ObjectKey{Namespace: namespace, Name: cmName}, &webhookConfig); err != nil {
 		logger.Error(err, "Failed to fetch ConfigMap", "Namespace", namespace, "Name", cmName)
-		return nil, fmt.Errorf("failed to fetch ConfigMap %s/%s: %w", namespace, cmName, err)
+		return nil, "", fmt.Errorf("failed to fetch ConfigMap %s/%s: %w", namespace, cmName, err)
 	}
 
-	allowedReasons, ok := configMapReasons.Data["allowedReasons"]
+	allowedReasons, ok := webhookConfig.Data[allowedReasonsKey]
 	if !ok {
-		return nil, fmt.Errorf("ConfigMap %s/%s does not contain 'allowedReasons' key", namespace, cmName)
+		logger.Info("webhook config does not contain %q key", allowedReasonsKey)
+		allowedReasons = ""
 	}
+
+	regexPattern, ok = webhookConfig.Data[reasonRegexPatternKey]
+	if !ok {
+		logger.Info(fmt.Sprintf("webhook config does not contain %q key", reasonRegexPatternKey))
+		regexPattern = ""
+	}
+
 	reasons := strings.Split(allowedReasons, ",")
-	return reasons, nil
+	return reasons, regexPattern, nil
 }
 
 // reasonIsAllowed checks if the reason message exists in the allowed reasons list.
@@ -184,4 +197,9 @@ func reasonIsAllowed(allowedReasons []string, reason string) bool {
 		}
 	}
 	return false
+}
+
+func reasonMatchesPattern(pattern string, reason string) bool {
+	matched, _ := regexp.MatchString(pattern, reason)
+	return matched
 }

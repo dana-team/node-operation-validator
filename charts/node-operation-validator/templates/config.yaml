@@ -7,3 +7,4 @@ metadata:
 data:
   forbiddenUsers: {{ join "," .Values.config.forbiddenUsers | quote }}
   allowedReasons: {{join "," .Values.config.allowedReasons | quote}}
+  reasonRegexPattern: {{ .Values.config.reasonRegex }}

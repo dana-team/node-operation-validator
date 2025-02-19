@@ -117,6 +117,7 @@ config:
   allowedReasons:
     - Configuration
     - Testing
+  reasonRegexPattern: ""
 # -- Service configuration for the operator.
 service:
   # -- The port for the HTTPS endpoint.
