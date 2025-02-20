@@ -117,6 +117,7 @@ config:
   allowedReasons:
     - Configuration
     - Testing
+  # -- Regular expression pattern for the reason field.
   reasonRegexPattern: ""
 # -- Service configuration for the operator.
 service:
