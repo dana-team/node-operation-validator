@@ -11,6 +11,7 @@ A Helm chart for Kubernetes
 | affinity | object | `{}` | Node affinity rules for scheduling pods. Allows you to specify advanced node selection constraints. |
 | config.allowedReasons | list | `["Configuration","Testing"]` | List of valid reasons for node operations. |
 | config.forbiddenUsers | list | `["user1","user2"]` | List of users forbidden from commiting node operations. |
+| config.reasonRegexPattern | string | `""` | Regular expression pattern for the reason field. |
 | fullnameOverride | string | `""` |  |
 | image.manager.pullPolicy | string | `"IfNotPresent"` | The pull policy for the image. |
 | image.manager.repository | string | `"ghcr.io/dana-team/node-operation-validator"` | The repository of the manager container image. |
@@ -19,16 +20,16 @@ A Helm chart for Kubernetes
 | livenessProbe.initialDelaySeconds | int | `15` | The initial delay before the liveness probe is initiated. |
 | livenessProbe.periodSeconds | int | `20` | The frequency (in seconds) with which the probe will be performed. |
 | livenessProbe.port | int | `8081` | The port for the health check endpoint. |
-| manager | object | `{"args":["--leader-elect","--health-probe-bind-address=:8081","--metrics-bind-address=:8443"],"command":["/manager"],"ports":{"health":{"containerPort":8081,"name":"health","protocol":"TCP"},"https":{"containerPort":8081,"name":"health","protocol":"TCP"},"webhook":{"containerPort":9443,"name":"webhook-server","protocol":"TCP"}},"resources":{"limits":{"cpu":"500m","memory":"128Mi"},"requests":{"cpu":"10m","memory":"64Mi"}},"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}},"volumeMounts":[{"mountPath":"/tmp/k8s-webhook-server/serving-certs","name":"cert","readOnly":true}],"webhookServer":{"defaultMode":420,"secretName":"webhook-server-cert"}}` | Configuration for the manager container. |
+| manager | object | `{"args":["--leader-elect","--health-probe-bind-address=:8081","--metrics-bind-address=:8443"],"command":["/manager"],"ports":{"health":{"containerPort":8081,"name":"health","protocol":"TCP"},"https":{"containerPort":8443,"name":"https","protocol":"TCP"},"webhook":{"containerPort":9443,"name":"webhook-server","protocol":"TCP"}},"resources":{"limits":{"cpu":"500m","memory":"128Mi"},"requests":{"cpu":"10m","memory":"64Mi"}},"securityContext":{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]}},"volumeMounts":[{"mountPath":"/tmp/k8s-webhook-server/serving-certs","name":"cert","readOnly":true}],"webhookServer":{"defaultMode":420,"secretName":"webhook-server-cert"}}` | Configuration for the manager container. |
 | manager.args | list | `["--leader-elect","--health-probe-bind-address=:8081","--metrics-bind-address=:8443"]` | Command-line arguments passed to the manager container. |
 | manager.command | list | `["/manager"]` | Command-line commands passed to the manager container. |
-| manager.ports | object | `{"health":{"containerPort":8081,"name":"health","protocol":"TCP"},"https":{"containerPort":8081,"name":"health","protocol":"TCP"},"webhook":{"containerPort":9443,"name":"webhook-server","protocol":"TCP"}}` | Port configurations for the manager container. |
+| manager.ports | object | `{"health":{"containerPort":8081,"name":"health","protocol":"TCP"},"https":{"containerPort":8443,"name":"https","protocol":"TCP"},"webhook":{"containerPort":9443,"name":"webhook-server","protocol":"TCP"}}` | Port configurations for the manager container. |
 | manager.ports.health.containerPort | int | `8081` | The port for the health check endpoint. |
 | manager.ports.health.name | string | `"health"` | The name of the health check port. |
 | manager.ports.health.protocol | string | `"TCP"` | The protocol used by the health check endpoint. |
-| manager.ports.https.containerPort | int | `8081` | The port for the health check endpoint. |
-| manager.ports.https.name | string | `"health"` | The name of the health check port. |
-| manager.ports.https.protocol | string | `"TCP"` | The protocol used by the health check endpoint. |
+| manager.ports.https.containerPort | int | `8443` | The port for the https endpoint. |
+| manager.ports.https.name | string | `"https"` | The name of the https port. |
+| manager.ports.https.protocol | string | `"TCP"` | The protocol used by the https endpoint. |
 | manager.ports.webhook.containerPort | int | `9443` | The port for the webhook server. |
 | manager.ports.webhook.name | string | `"webhook-server"` | The name of the webhook port. |
 | manager.ports.webhook.protocol | string | `"TCP"` | The protocol used by the webhook server. |
