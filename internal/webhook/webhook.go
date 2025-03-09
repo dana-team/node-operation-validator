@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 
+	"k8s.io/client-go/tools/record"
+
 	"github.com/go-logr/logr"
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -17,9 +19,10 @@ import (
 
 // NodeValidator is the struct used to validate the nodes
 type NodeValidator struct {
-	Decoder admission.Decoder
-	Client  client.Client
-	Logger  logr.Logger
+	Decoder  admission.Decoder
+	Client   client.Client
+	Logger   logr.Logger
+	Recorder record.EventRecorder
 }
 
 // Operation represents the type of operation being performed
@@ -39,10 +42,12 @@ const (
 	cmNamespace                     = "node-operation-validator-system"
 	reasonRegexPatternKey           = "reasonRegexPattern"
 	allowedReasonsKey               = "allowedReasons"
+	eventReason                     = "NodeOperation"
 )
 
 // +kubebuilder:webhook:path=/validate-v1-node,mutating=false,failurePolicy=ignore,sideEffects=None,groups=core,resources=nodes,verbs=delete;create;update,versions=v1,name=nodeoperation.dana.io,admissionReviewVersions=v1
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 
 func (n *NodeValidator) Handle(ctx context.Context, req admission.Request) admission.Response {
 	logger := n.Logger.WithValues("node", req.Name)
@@ -64,15 +69,19 @@ func (n *NodeValidator) Handle(ctx context.Context, req admission.Request) admis
 		if err := n.Decoder.DecodeRaw(req.OldObject, &node); err != nil {
 			return admission.Errored(http.StatusBadRequest, fmt.Errorf("failed to decode node %q", req.Name))
 		}
-		reasonMessage, doesReasonExist := node.Annotations[reasonAnnotation]
-		return userOnlyOperation(Delete, user, forbiddenUsers, reasonMessage, logger, true, doesReasonExist, allowedReasons, reasonRegex)
+		reason, doesReasonExist := node.Annotations[reasonAnnotation]
+		return userOnlyOperation(&oldNode, n.Recorder, Delete, user, forbiddenUsers, reason, logger, true, doesReasonExist, allowedReasons, reasonRegex)
 
 	case admissionv1.Create:
 		if err := n.Decoder.DecodeRaw(req.Object, &node); err != nil {
 			return admission.Errored(http.StatusBadRequest, fmt.Errorf("failed to decode node %q", req.Name))
 		}
 		_, doesReasonExist := node.Annotations[reasonAnnotation]
-		return validateNoReason(doesReasonExist, logger, Create, user)
+		response := validateNoReason(doesReasonExist, logger, Create, user)
+		if response.Allowed {
+			createNodeEvent(&oldNode, n.Recorder, "", user, Operation(req.Operation))
+		}
+		return response
 
 	// The default case handles the update requests.
 	default:
@@ -83,13 +92,12 @@ func (n *NodeValidator) Handle(ctx context.Context, req admission.Request) admis
 			return admission.Errored(http.StatusBadRequest, fmt.Errorf("failed to decode node %q", req.Name))
 		}
 		reasonMessage, doesReasonExist := node.Annotations[reasonAnnotation]
-
 		switch {
 		case !oldNode.Spec.Unschedulable && node.Spec.Unschedulable:
-			return userOnlyOperation(Cordon, user, forbiddenUsers, reasonMessage, logger, true, doesReasonExist, allowedReasons, reasonRegex)
+			return userOnlyOperation(&oldNode, n.Recorder, Cordon, user, forbiddenUsers, reasonMessage, logger, true, doesReasonExist, allowedReasons, reasonRegex)
 
 		case oldNode.Spec.Unschedulable && !node.Spec.Unschedulable:
-			return userOnlyOperation(Uncordon, user, forbiddenUsers, reasonMessage, logger, false, doesReasonExist, allowedReasons, reasonRegex)
+			return userOnlyOperation(&oldNode, n.Recorder, Uncordon, user, forbiddenUsers, reasonMessage, logger, false, doesReasonExist, allowedReasons, reasonRegex)
 
 		default:
 			return admission.Allowed("Node was updated")
@@ -99,7 +107,7 @@ func (n *NodeValidator) Handle(ctx context.Context, req admission.Request) admis
 
 // userOnlyOperation checks whether a given user is allowed to perform a specific operation on a node.
 // It returns an admission response indicating whether the operation is allowed or denied.
-func userOnlyOperation(operation Operation, user string, forbiddenUsers []string, reasonMessage string, log logr.Logger, isReasonRequired bool, doesReasonExist bool, allowedReasons []string, reasonPattern string) admission.Response {
+func userOnlyOperation(node *corev1.Node, recorder record.EventRecorder, operation Operation, user string, forbiddenUsers []string, reason string, log logr.Logger, isReasonRequired bool, doesReasonExist bool, allowedReasons []string, reasonPattern string) admission.Response {
 	switch {
 	case isForbiddenUser(user, forbiddenUsers):
 		log.Info(fmt.Sprintf("%s node denied", operation), "DenialReason", "forbidden user", "User", user)
@@ -107,27 +115,34 @@ func userOnlyOperation(operation Operation, user string, forbiddenUsers []string
 
 	case isServiceAccount(user):
 		log.Info(fmt.Sprintf("%s node approved", operation), "User", user, "ApprovalReason", "Service account is allowed to do any operation")
+		createNodeEvent(node, recorder, reason, user, operation)
 		return admission.Allowed(fmt.Sprintf("Service account %q is allowed to do everything", user))
 
 	case isNode(user):
 		log.Info(fmt.Sprintf("%s node approved", operation), "User", user, "ApprovalReason", "Node is allowed to do any operation")
+		createNodeEvent(node, recorder, reason, user, operation)
 		return admission.Allowed(fmt.Sprintf("Node %q is allowed to do everything", user))
 
 	default:
 		if isReasonRequired {
 			if doesReasonExist {
-				if reasonIsAllowed(allowedReasons, reasonMessage) || reasonMatchesPattern(reasonPattern, reasonMessage) {
-					log.Info(fmt.Sprintf("%s node approved", operation), "User", user, "Reason", reasonMessage)
+				if reasonIsAllowed(allowedReasons, reason) || reasonMatchesPattern(reasonPattern, reason) || isReasonFreetext(operation, reason) {
+					log.Info(fmt.Sprintf("%s node approved", operation), "User", user, "Reason", reason)
+					createNodeEvent(node, recorder, reason, user, operation)
 					return admission.Allowed(fmt.Sprintf("%s operation has been approved", operation))
 				}
-				log.Info(fmt.Sprintf("%s node denied", operation), "DenialReason", "invalid reason", "User", user, "Reason", reasonMessage)
-				return admission.Denied(fmt.Sprintf("Invalid reason %q. Allowed reasons: %v", reasonMessage, allowedReasons))
+				log.Info(fmt.Sprintf("%s node denied", operation), "DenialReason", "invalid reason", "User", user, "Reason", reason)
+				return admission.Denied(fmt.Sprintf("Invalid reason %q. Allowed reasons: %v", reason, allowedReasons))
 			} else {
 				log.Info(fmt.Sprintf("%s node denied", operation), "DenialReason", "reason annotation doesn't exist", "User", user)
 				return admission.Denied(fmt.Sprintf("You must add %q annotation", reasonAnnotation))
 			}
 		} else {
-			return validateNoReason(doesReasonExist, log, operation, user)
+			response := validateNoReason(doesReasonExist, log, operation, user)
+			if response.Allowed {
+				createNodeEvent(node, recorder, "", user, operation)
+			}
+			return response
 		}
 	}
 }
@@ -199,7 +214,21 @@ func reasonIsAllowed(allowedReasons []string, reason string) bool {
 	return false
 }
 
+// reasonMatchesPattern checks if the reason message matches the regex pattern.
 func reasonMatchesPattern(pattern string, reason string) bool {
 	matched, _ := regexp.MatchString(pattern, reason)
 	return matched
+}
+
+// isReasonFreetext checks if the operation allows a reason to be freetetext.
+// When a node is deleted, the reason is allowed to be freetext to allow for more flexibility in event creation.
+func isReasonFreetext(operation Operation, reason string) bool {
+	return operation == Delete && reason != ""
+}
+
+// createNodeEvent creates an event for the node operation.
+func createNodeEvent(node *corev1.Node, recorder record.EventRecorder, message, user string, operation Operation) {
+	reason := fmt.Sprintf("%s: %s", eventReason, operation)
+	fullMessage := fmt.Sprintf("%s: %s", user, message)
+	recorder.Event(node, corev1.EventTypeNormal, reason, fullMessage)
 }

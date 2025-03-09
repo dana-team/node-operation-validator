@@ -3,9 +3,12 @@ package webhook
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
+
+	"k8s.io/client-go/tools/record"
 
 	. "github.com/onsi/gomega"
 	admissionv1 "k8s.io/api/admission/v1"
@@ -48,13 +51,13 @@ func TestNodeWebhook(t *testing.T) {
 		{name: "DeleteAsKubeadminWithReason", operation: admissionv1.Delete, user: systemAdminUser, reason: "Testing", allowed: false},
 		{name: "DeleteAsUserWithoutReason", operation: admissionv1.Delete, user: regularUserExample, reason: "", allowed: false},
 		{name: "DeleteAsUserWithValidReason", operation: admissionv1.Delete, user: regularUserExample, reason: "testing", allowed: true},
-		{name: "DeleteAsUserWithReasonMatchingRegex", operation: admissionv1.Delete, user: regularUserExample, reason: "testRegex123", allowed: true},
-		{name: "DeleteAsUserWithoutValidReason", operation: admissionv1.Delete, user: regularUserExample, reason: "for fun", allowed: false},
+		{name: "DeleteAsUserWithFreetextReason", operation: admissionv1.Delete, user: regularUserExample, reason: "for fun", allowed: true},
 		{name: "CordonAsKubeadminWithReason", operation: "cordon", user: systemAdminUser, reason: "Testing", allowed: false},
 		{name: "CordonAsUserWithoutReason", operation: "cordon", user: regularUserExample, reason: "", allowed: false},
 		{name: "CordonAsUserWithReason", operation: "cordon", user: regularUserExample, reason: "Testing", allowed: true},
 		{name: "CordonAsServiceAccountWithoutReason", operation: "cordon", user: serviceAccountUser + "openshift-machine-config-operator:machine-config-daemon", reason: "", allowed: true},
 		{name: "CordonAsNodeWithoutReason", operation: "cordon", user: nodeUser + "worker-1", reason: "", allowed: true},
+		{name: "DeleteAsUserWithReasonMatchingRegex", operation: "cordon", user: regularUserExample, reason: "testRegex123", allowed: true},
 		{name: "UncordonAsKubeadminWithoutReason", operation: "uncordon", user: systemAdminUser, reason: "", allowed: false},
 		{name: "UncordonAsUserWithReason", operation: "uncordon", user: regularUserExample, reason: "Testing", allowed: false},
 		{name: "UncordonAsUserWithoutReason", operation: "uncordon", user: regularUserExample, reason: "", allowed: true},
@@ -85,13 +88,14 @@ func TestNodeWebhook(t *testing.T) {
 	ctx := context.Background()
 	g := NewWithT(t)
 	decoder := admission.NewDecoder(scheme.Scheme)
-	nv := NodeValidator{Decoder: decoder, Client: fakeClient}
 
 	err = os.Setenv(ForbiddenUsersEnv, systemAdminUser)
 	if err != nil {
 		print(err)
 	}
 	for _, test := range tests {
+		recorder := record.NewFakeRecorder(1)
+		nv := NodeValidator{Decoder: decoder, Client: fakeClient, Recorder: recorder}
 		t.Run(test.name, func(t *testing.T) {
 			annotations := make(map[string]string)
 			if test.reason != "" {
@@ -179,6 +183,18 @@ func TestNodeWebhook(t *testing.T) {
 					response := nv.Handle(ctx, UpdateReq)
 					g.Expect(response.Allowed).Should(Equal(test.allowed))
 				}
+			}
+
+			if !test.allowed {
+				g.Expect(recorder.Events).Should(BeEmpty())
+			} else {
+				// recorder.Events is a channel, so we need to read from it in a goroutine
+				go func() {
+					for event := range recorder.Events {
+						g.Expect(strings.ToUpper(event)).To(Equal(strings.ToUpper(fmt.Sprintf("%s %s: %s %s: %s", corev1.EventTypeNormal, eventReason, test.operation, test.user, test.reason))))
+					}
+				}()
+
 			}
 		})
 	}
