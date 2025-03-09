@@ -160,9 +160,11 @@ func main() {
 	setupLog.Info("registering node-operation-validator to the webhook server")
 	hookServer.Register("/validate-v1-node",
 		&webhook.Admission{Handler: &nodewebhook.NodeValidator{
-			Decoder: decoder,
-			Client:  mgr.GetClient(),
-			Logger:  ctrl.Log.WithName("Webhook Logger")}})
+			Decoder:  decoder,
+			Client:   mgr.GetClient(),
+			Logger:   ctrl.Log.WithName("Webhook Logger"),
+			Recorder: mgr.GetEventRecorderFor("node-operation-validator"),
+		}})
 
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
