@@ -1,0 +1,11 @@
+{{if .Values.logAggregation.enabled}}
+apiVersion: logging.banzaicloud.io/v1beta1
+kind: SyslogNGFlow
+metadata:
+  name: {{ include "node-operation-validator.fullname" . }}-flow
+  labels: {{- include "node-operation-validator.labels" . | nindent 4 }}
+spec:
+  localOutpuRefs:
+    - {{ include "node-operation-validator.fullname" . }}-output
+  logingRef: {{.Values.logAggregation.loggingRef}}
+{{end}}

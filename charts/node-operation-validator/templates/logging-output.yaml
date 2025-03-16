@@ -1,0 +1,19 @@
+{{if .Values.logAggregation.enabled}}
+apiVersion: logging.banzaicloud.io/v1beta1
+kind: SyslogNGFOutput
+metadata:
+  name: {{ include "node-operation-validator.fullname" . }}-output
+  labels: {{- include "node-operation-validator.labels" . | nindent 4 }}
+spec:
+  logingRef: {{.Values.logAggregation.loggingRef}}
+  elastic-datastream:
+    user: {{.Values.logAggregation.auth.user}}
+    password:
+      valueFrom:
+        secretKeyRef:
+          name: {{.Values.logAggregation.auth.password.secretName}}
+          key: {{.Values.logAggregation.auth.password.key}}
+    tls: {{ toYaml .Values.logAggregation.tlsOpts | nindent 6 }}
+    url: {{.Values.logAggregation.url}}
+    record: {{.Values.logAggregation.record}}
+{{ end }}
