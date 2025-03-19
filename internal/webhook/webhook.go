@@ -70,7 +70,7 @@ func (n *NodeValidator) Handle(ctx context.Context, req admission.Request) admis
 			return admission.Errored(http.StatusBadRequest, fmt.Errorf("failed to decode node %q", req.Name))
 		}
 		reason, doesReasonExist := node.Annotations[reasonAnnotation]
-		return userOnlyOperation(&oldNode, n.Recorder, Delete, user, forbiddenUsers, reason, logger, true, doesReasonExist, allowedReasons, reasonRegex)
+		return userOnlyOperation(&node, n.Recorder, Delete, user, forbiddenUsers, reason, logger, true, doesReasonExist, allowedReasons, reasonRegex)
 
 	case admissionv1.Create:
 		if err := n.Decoder.DecodeRaw(req.Object, &node); err != nil {
@@ -79,13 +79,13 @@ func (n *NodeValidator) Handle(ctx context.Context, req admission.Request) admis
 		_, doesReasonExist := node.Annotations[reasonAnnotation]
 		response := validateNoReason(doesReasonExist, logger, Create, user)
 		if response.Allowed {
-			createNodeEvent(&oldNode, n.Recorder, "", user, Operation(req.Operation))
+			createNodeEvent(&node, n.Recorder, "", user, Operation(req.Operation))
 		}
 		return response
 
 	// The default case handles the update requests.
 	default:
-		if err := n.Decoder.DecodeRaw(req.OldObject, &node); err != nil {
+		if err := n.Decoder.DecodeRaw(req.OldObject, &oldNode); err != nil {
 			return admission.Errored(http.StatusBadRequest, fmt.Errorf("failed to decode node %q", req.Name))
 		}
 		if err := n.Decoder.DecodeRaw(req.Object, &node); err != nil {
@@ -94,10 +94,10 @@ func (n *NodeValidator) Handle(ctx context.Context, req admission.Request) admis
 		reasonMessage, doesReasonExist := node.Annotations[reasonAnnotation]
 		switch {
 		case !oldNode.Spec.Unschedulable && node.Spec.Unschedulable:
-			return userOnlyOperation(&oldNode, n.Recorder, Cordon, user, forbiddenUsers, reasonMessage, logger, true, doesReasonExist, allowedReasons, reasonRegex)
+			return userOnlyOperation(&node, n.Recorder, Cordon, user, forbiddenUsers, reasonMessage, logger, true, doesReasonExist, allowedReasons, reasonRegex)
 
 		case oldNode.Spec.Unschedulable && !node.Spec.Unschedulable:
-			return userOnlyOperation(&oldNode, n.Recorder, Uncordon, user, forbiddenUsers, reasonMessage, logger, false, doesReasonExist, allowedReasons, reasonRegex)
+			return userOnlyOperation(&node, n.Recorder, Uncordon, user, forbiddenUsers, "uncordoned node", logger, false, doesReasonExist, allowedReasons, reasonRegex)
 
 		default:
 			return admission.Allowed("Node was updated")
@@ -229,6 +229,5 @@ func isReasonFreetext(operation Operation, reason string) bool {
 // createNodeEvent creates an event for the node operation.
 func createNodeEvent(node *corev1.Node, recorder record.EventRecorder, message, user string, operation Operation) {
 	reason := fmt.Sprintf("%s: %s", eventReason, operation)
-	fullMessage := fmt.Sprintf("%s: %s", user, message)
-	recorder.Event(node, corev1.EventTypeNormal, reason, fullMessage)
+	recorder.Eventf(node, corev1.EventTypeNormal, reason, "%s: %s", user, message)
 }
