@@ -7,7 +7,7 @@ toolchain go1.24.1
 require (
 	github.com/go-logr/logr v1.4.2
 	github.com/go-logr/zapr v1.3.0
-	github.com/onsi/gomega v1.36.3
+	github.com/onsi/gomega v1.37.0
 	go.elastic.co/ecszap v1.0.3
 	go.uber.org/zap v1.27.0
 	k8s.io/api v0.32.3
